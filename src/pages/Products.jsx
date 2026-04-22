@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { Filter, X } from 'lucide-react';
-import { apiClient } from '../services/apiClient';
+import { apiClient, API_BASE_URL } from '../services/apiClient';
 import api from '../services/api';
 import ProductCard from '../components/ProductCard';
 import Sidebar from '../components/Sidebar';
@@ -217,7 +217,7 @@ function Products() {
           <h1 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">Error Loading Devices</h1>
           <p className="text-gray-600 dark:text-gray-400">{pageError}</p>
           <p className="text-sm text-gray-500 dark:text-gray-500 mt-4">
-            Make sure the backend API is running on http://localhost:8000
+            Make sure the backend API is reachable at {API_BASE_URL}
           </p>
         </div>
       </div>

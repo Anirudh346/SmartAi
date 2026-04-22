@@ -140,6 +140,6 @@ const api = {
 };
 
 export default api;
-export { apiClient };
+export { apiClient, API_BASE_URL };
 
 

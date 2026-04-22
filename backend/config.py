@@ -28,9 +28,11 @@ class Settings(BaseSettings):
     
     # CORS
     allowed_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:5174,http://192.168.29.153:5174"
+    allowed_origin_regex: str = r"https://.*\.vercel\.app"
     
     # Environment
     environment: str = "development"
+    preload_nlp_on_startup: bool = False
     
     model_config = SettingsConfigDict(
         env_file=".env",

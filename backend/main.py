@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import asyncio
 
 from config import Settings
 from database import init_db, engine
@@ -19,16 +20,24 @@ async def lifespan(app: FastAPI):
     # Startup
     init_db()
     print(f"[OK] Connected to MySQL database: {settings.database_name}")
-    
-    # Optional: Pre-load NLP models on startup (takes 30-60 seconds but avoids first request lag)
-    try:
-        print("[INFO] Pre-loading NLP models (this may take 30-60 seconds)...")
-        from routers.devices import nlp_service_preload
-        nlp_service_preload()
-        print("[OK] NLP models pre-loaded successfully")
-    except Exception as e:
-        print(f"[WARN] NLP pre-loading skipped: {str(e)}")
-        print("   (NLP will lazy-load on first request)")
+
+    # Keep startup fast in production platforms (Render port scan timeout).
+    # NLP models are still lazy-loaded on first request by the router.
+    preload_nlp = settings.preload_nlp_on_startup
+    if preload_nlp:
+        async def _preload_nlp_background():
+            try:
+                print("[INFO] Pre-loading NLP models in background...")
+                from routers.devices import nlp_service_preload
+                await asyncio.to_thread(nlp_service_preload)
+                print("[OK] NLP models pre-loaded successfully")
+            except Exception as e:
+                print(f"[WARN] NLP pre-loading skipped: {str(e)}")
+                print("   (NLP will lazy-load on first request)")
+
+        asyncio.create_task(_preload_nlp_background())
+    else:
+        print("[INFO] NLP pre-loading disabled for non-development environment")
     
     yield
     
@@ -50,6 +59,7 @@ allowed_origins = settings.allowed_origins.split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=settings.allowed_origin_regex or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
