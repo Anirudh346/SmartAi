@@ -113,7 +113,6 @@ protobuf==4.21.12
 psutil==7.0.0
 pure_eval==0.2.3
 pyasn1==0.6.2
-PyAudio==0.2.14
 pycparser==3.0
 pydantic==2.12.5
 pydantic-settings==2.13.1
@@ -130,7 +129,6 @@ python-http-client==3.3.7
 python-jose==3.3.0
 python-multipart==0.0.6
 pytz==2025.1
-pywin32==308
 PyYAML==6.0.3
 pyzmq==26.2.1
 redis==7.1.0
