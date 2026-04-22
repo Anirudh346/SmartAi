@@ -1,6 +1,13 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const isBrowser = typeof window !== 'undefined';
+const isLocalHost = isBrowser && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '';
+const API_BASE_URL = (configuredBaseUrl || (isLocalHost ? 'http://localhost:8000' : '')).replace(/\/+$/, '');
+
+if (!configuredBaseUrl && !isLocalHost) {
+  console.warn('Missing VITE_API_BASE_URL/VITE_API_URL. Using same-origin relative API paths.');
+}
 
 // Create axios instance
 const apiClient = axios.create({
