@@ -6,6 +6,8 @@ import api from '../services/api';
 import ProductCard from '../components/ProductCard';
 import Sidebar from '../components/Sidebar';
 
+const PAGE_SIZE = 48;
+
 function Products() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -25,6 +27,10 @@ function Products() {
   const [recommendError, setRecommendError] = useState(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [pageError, setPageError] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalDevices, setTotalDevices] = useState(0);
+  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('search') || '');
   const normalizeDevices = (payload) => {
     if (Array.isArray(payload)) {
       return payload;
@@ -38,29 +44,80 @@ function Products() {
     return [];
   };
 
-  // Fetch all devices on mount
+  const parsePriceValue = (priceText) => {
+    if (!priceText) return 0;
+    const numeric = String(priceText).replace(/[^\d.]/g, '');
+    return numeric ? parseFloat(numeric) : 0;
+  };
+
+  // Debounce search term to avoid rapid API calls while typing.
   useEffect(() => {
-    const fetchAllDevices = async () => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(filters.search || '');
+      setCurrentPage(1);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [filters.search]);
+
+  // Reset to first page when non-search filters change.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters.brand, filters.chipset]);
+
+  // Fetch a paginated subset of devices from backend.
+  useEffect(() => {
+    if (recommendedDevices && recommendedDevices.length > 0) {
+      return;
+    }
+
+    const fetchDevicesPage = async () => {
       try {
         setPageLoading(true);
-        console.log('📱 Fetching devices from backend...');
-        const response = await apiClient.get('/api/devices?page_size=10000');
-        console.log('✅ Devices fetched successfully:', response.data);
+        const params = {
+          page: currentPage,
+          page_size: PAGE_SIZE,
+          search: debouncedSearch || undefined,
+          brand: filters.brand.length > 0 ? filters.brand : undefined,
+          processor: filters.chipset.length > 0 ? filters.chipset : undefined,
+        };
+
+        const response = await apiClient.get('/api/devices', {
+          params,
+          paramsSerializer: (rawParams) => {
+            const search = new URLSearchParams();
+
+            Object.entries(rawParams).forEach(([key, value]) => {
+              if (value === undefined || value === null || value === '') {
+                return;
+              }
+
+              if (Array.isArray(value)) {
+                value.forEach((v) => search.append(key, String(v)));
+              } else {
+                search.append(key, String(value));
+              }
+            });
+
+            return search.toString();
+          },
+        });
+
         const devices = normalizeDevices(response.data);
-        console.log('📊 Normalized devices:', devices.length, 'total');
         setAllDevices(devices);
+        setTotalDevices(response.data?.total || devices.length);
+        setTotalPages(response.data?.total_pages || 1);
+        setPageError(null);
       } catch (err) {
-        console.error('❌ Failed to fetch devices:', err);
         const errorMsg = err.response?.data?.detail || err.response?.statusText || err.message || 'Failed to fetch devices from backend';
-        console.error('Error details:', { status: err.response?.status, data: err.response?.data });
         setPageError(errorMsg);
       } finally {
         setPageLoading(false);
       }
     };
 
-    fetchAllDevices();
-  }, []);
+    fetchDevicesPage();
+  }, [currentPage, debouncedSearch, filters.brand, filters.chipset, recommendedDevices]);
 
   const fetchRecommendations = async (preferences) => {
     setRecommendLoading(true);
@@ -115,43 +172,16 @@ function Products() {
     }
   }, [searchParams, filters.search]);
 
-  // Apply client-side filtering when devices or filters change
+  // Apply only price filters client-side on the current page slice.
   useEffect(() => {
     if (allDevices.length > 0) {
       let filtered = allDevices;
-
-      // Apply search filter
-      if (filters.search) {
-        const searchLower = filters.search.toLowerCase();
-        filtered = filtered.filter(device =>
-          (device.brand && device.brand.toLowerCase().includes(searchLower)) ||
-          (device.model_name && device.model_name.toLowerCase().includes(searchLower))
-        );
-      }
-
-      // Apply brand filter
-      if (filters.brand.length > 0) {
-        filtered = filtered.filter(device =>
-          filters.brand.includes(device.brand)
-        );
-      }
-
-      // Apply chipset filter - match if any selected chipset appears in device chipset
-      if (filters.chipset.length > 0) {
-        filtered = filtered.filter(device => {
-          if (!device.chipset) return false;
-          const deviceChipset = device.chipset.toLowerCase();
-          return filters.chipset.some((chipset) =>
-            deviceChipset.includes(chipset.toLowerCase())
-          );
-        });
-      }
 
       // Apply price filters
       if (filters.minPrice) {
         const min = parseFloat(filters.minPrice);
         filtered = filtered.filter(device => {
-          const price = device.price ? parseFloat(device.price) : 0;
+          const price = parsePriceValue(device.price);
           return price >= min;
         });
       }
@@ -159,33 +189,37 @@ function Products() {
       if (filters.maxPrice) {
         const max = parseFloat(filters.maxPrice);
         filtered = filtered.filter(device => {
-          const price = device.price ? parseFloat(device.price) : 0;
+          const price = parsePriceValue(device.price);
           return price <= max;
         });
       }
 
       setFilteredDevices(filtered);
+    } else {
+      setFilteredDevices([]);
     }
-  }, [filters, allDevices]);
+  }, [filters.minPrice, filters.maxPrice, allDevices]);
 
   // Consume NLP search results or parsed preferences from Navbar
   useEffect(() => {
     if (location.state?.nlpSearchResults) {
       // Direct NLP search results from the new endpoint
-      console.log('✅ Received NLP search results:', location.state.nlpSearchResults.length, 'devices');
       setRecommendedDevices(location.state.nlpSearchResults);
       setParsedPreferences(
         location.state.nlpQuery ? { query: location.state.nlpQuery } : null
       );
+      setPageLoading(false);
+      setPageError(null);
     } else if (location.state?.parsedPreferences) {
       // Fallback: use parsed preferences for client-side filtering
       setParsedPreferences(location.state.parsedPreferences);
       // Fetch recommendations from backend using parsed preferences
-      if (allDevices.length > 0) {
-        fetchRecommendations(location.state.parsedPreferences);
-      }
+      fetchRecommendations(location.state.parsedPreferences);
+    } else {
+      setRecommendedDevices(null);
+      setParsedPreferences(null);
     }
-  }, [location.state?.nlpSearchResults, location.state?.parsedPreferences, allDevices.length]);
+  }, [location.state?.nlpSearchResults, location.state?.parsedPreferences]);
 
   // When recommended devices are available, use them instead of client-side filtering
   const displayDevices = recommendedDevices && recommendedDevices.length > 0 
@@ -197,6 +231,10 @@ function Products() {
 
   const handleFilterChange = (newFilters) => {
     setFilters(newFilters);
+    if (recommendedDevices) {
+      setRecommendedDevices(null);
+      setParsedPreferences(null);
+    }
   };
 
   if (pageLoading) {
@@ -224,7 +262,7 @@ function Products() {
     );
   }
 
-  if (allDevices.length === 0) {
+  if (!recommendedDevices && allDevices.length === 0) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-16 text-center">
         <p className="text-gray-600 dark:text-gray-400">No devices found. Please try again later.</p>
@@ -298,7 +336,7 @@ function Products() {
                 {parsedPreferences ? 'AI Recommendations' : filters.search ? `Search: "${filters.search}"` : 'All Products'}
               </h1>
               <p className="text-gray-600 dark:text-gray-400">
-                {displayDevices.length} device{displayDevices.length !== 1 ? 's' : ''} found
+                {recommendedDevices ? displayDevices.length : totalDevices} device{(recommendedDevices ? displayDevices.length : totalDevices) !== 1 ? 's' : ''} found
               </p>
             </div>
             <button
@@ -398,10 +436,33 @@ function Products() {
                   });
                   setParsedPreferences(null);
                   setRecommendedDevices(null);
+                  setCurrentPage(1);
                 }}
                 className="mt-4 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
               >
                 Clear all filters
+              </button>
+            </div>
+          )}
+
+          {!recommendedDevices && totalPages > 1 && (
+            <div className="mt-8 flex items-center justify-center gap-3">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1 || pageLoading}
+                className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages || pageLoading}
+                className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 disabled:opacity-50"
+              >
+                Next
               </button>
             </div>
           )}

@@ -11,28 +11,22 @@ function Sidebar({ filters, onFilterChange, isOpen, onClose }) {
     const fetchFiltersData = async () => {
       try {
         setLoading(true);
-        console.log('Fetching filter data...');
         
         // Fetch brands from API
         const brandsResponse = await apiClient.get('/api/devices/brands');
-        console.log('Brands response:', brandsResponse.data);
         if (brandsResponse.data && Array.isArray(brandsResponse.data.brands)) {
           const brandsList = brandsResponse.data.brands.filter(b => b);
-          console.log('Brands loaded:', brandsList.length);
           setBrands(brandsList);
         }
         
         // Fetch chipsets from API
         const chipsetsResponse = await apiClient.get('/api/devices/chipsets');
-        console.log('Chipsets response:', chipsetsResponse.data);
         if (chipsetsResponse.data && Array.isArray(chipsetsResponse.data.chipsets)) {
           const chipsetsList = chipsetsResponse.data.chipsets.filter(c => c);
-          console.log('Chipsets loaded:', chipsetsList.length);
           setChipsets(chipsetsList);
         }
       } catch (err) {
         console.error('Failed to fetch filter data:', err.message);
-        console.error('Error details:', err.response?.data || err);
         setBrands([]);
         setChipsets([]);
       } finally {

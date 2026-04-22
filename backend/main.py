@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 
@@ -64,6 +65,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Compress API responses to reduce bandwidth and time-to-first-byte on free tiers.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Include routers
 app.include_router(devices.router, prefix="/api/devices", tags=["Devices"])

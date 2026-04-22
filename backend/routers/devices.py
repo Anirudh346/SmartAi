@@ -313,7 +313,7 @@ async def get_devices(
     device_type: Optional[List[str]] = Query(None),
     brand: Optional[List[str]] = Query(None),
     search: Optional[str] = Query(None),
-    processor: Optional[str] = Query(None),
+    processor: Optional[List[str]] = Query(None),
     min_price: Optional[float] = Query(None),
     max_price: Optional[float] = Query(None),
     page: int = Query(1, ge=1),
@@ -341,13 +341,16 @@ async def get_devices(
         )
     
     if processor:
-        # Search in chipset or CPU
-        query = query.filter(
-            or_(
-                Device.chipset.ilike(f"%{processor}%"),
-                Device.cpu.ilike(f"%{processor}%")
-            )
-        )
+        # Match any selected processor keyword in chipset or CPU.
+        processor_filters = []
+        for p in processor:
+            if not p:
+                continue
+            processor_filters.append(Device.chipset.ilike(f"%{p}%"))
+            processor_filters.append(Device.cpu.ilike(f"%{p}%"))
+
+        if processor_filters:
+            query = query.filter(or_(*processor_filters))
     
     if min_price is not None:
         # For price filtering, we'd need to parse the price field

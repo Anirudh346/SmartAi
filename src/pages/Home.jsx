@@ -26,7 +26,7 @@ function Home() {
     const fetchDevices = async () => {
       try {
         setLoading(true);
-        const response = await apiClient.get('/api/devices?page_size=100');
+        const response = await apiClient.get('/api/devices?page_size=24');
         const devices = normalizeDevices(response.data);
         
         // Get first 8 as recent devices
