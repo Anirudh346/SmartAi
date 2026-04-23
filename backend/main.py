@@ -13,6 +13,10 @@ from routers import devices
 
 # Load settings
 settings = Settings()
+APP_STATE = {
+    "database_ready": False,
+    "database_error": None,
+}
 
 
 def _get_nlp_status() -> dict:
@@ -55,8 +59,20 @@ def _get_nlp_status() -> dict:
 async def lifespan(app: FastAPI):
     """Initialize database connection on startup and close on shutdown"""
     # Startup
-    init_db()
-    print(f"[OK] Connected to MySQL database: {settings.database_name}")
+    try:
+        # Do not let slow DB init block app startup indefinitely on free tiers.
+        await asyncio.wait_for(asyncio.to_thread(init_db), timeout=20)
+        APP_STATE["database_ready"] = True
+        APP_STATE["database_error"] = None
+        print(f"[OK] Connected to MySQL database: {settings.database_name}")
+    except asyncio.TimeoutError:
+        APP_STATE["database_ready"] = False
+        APP_STATE["database_error"] = "Database init timeout"
+        print("[WARN] Database initialization timed out; starting API in degraded mode")
+    except Exception as e:
+        APP_STATE["database_ready"] = False
+        APP_STATE["database_error"] = str(e)
+        print(f"[WARN] Database initialization failed; starting API in degraded mode: {str(e)}")
 
     # Keep startup fast in production platforms (Render port scan timeout).
     # NLP models are still lazy-loaded on first request by the router.
@@ -127,6 +143,8 @@ async def health_check():
         "status": "ok",
         "database": "mysql",
         "ready": True,
+        "database_ready": APP_STATE["database_ready"],
+        "database_error": APP_STATE["database_error"],
         "nlp": _get_nlp_status(),
     }
 
