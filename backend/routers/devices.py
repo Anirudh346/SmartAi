@@ -544,10 +544,10 @@ async def nlp_search(
         # Initialize NLP service if needed
         from ml.nlp_service import get_nlp_service
         nlp_service = get_nlp_service()
-        
+
+        # Never block request flow on heavy model initialization.
         if not nlp_service.is_loaded:
-            logger.info("🔄 Initializing NLP components on first request...")
-            nlp_service.initialize()
+            nlp_service.initialize_in_background()
         
         # Parse query with fallback to keyword matching
         logger.debug("📝 Parsing query with NLP service...")

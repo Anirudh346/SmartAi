@@ -15,6 +15,42 @@ from routers import devices
 settings = Settings()
 
 
+def _get_nlp_status() -> dict:
+    """Return NLP loading state without forcing model initialization."""
+    try:
+        from ml.nlp_service import get_nlp_service
+
+        nlp_service = get_nlp_service()
+        if not nlp_service.enable_heavy_nlp:
+            state = "disabled"
+        elif nlp_service.is_loaded:
+            state = "loaded"
+        elif nlp_service.initialization_in_progress:
+            state = "loading"
+        elif nlp_service.load_error:
+            state = "error"
+        else:
+            state = "idle"
+
+        return {
+            "state": state,
+            "heavy_nlp_enabled": nlp_service.enable_heavy_nlp,
+            "is_loaded": nlp_service.is_loaded,
+            "initialization_attempted": nlp_service.initialization_attempted,
+            "initialization_in_progress": nlp_service.initialization_in_progress,
+            "load_error": nlp_service.load_error,
+        }
+    except Exception as e:
+        return {
+            "state": "unavailable",
+            "heavy_nlp_enabled": False,
+            "is_loaded": False,
+            "initialization_attempted": False,
+            "initialization_in_progress": False,
+            "load_error": f"NLP status unavailable: {str(e)}",
+        }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database connection on startup and close on shutdown"""
@@ -90,8 +126,15 @@ async def health_check():
     return {
         "status": "ok",
         "database": "mysql",
-        "ready": True
+        "ready": True,
+        "nlp": _get_nlp_status(),
     }
+
+
+@app.get("/health/nlp")
+async def nlp_health_check():
+    """Detailed NLP model loading status."""
+    return _get_nlp_status()
 
 
 if __name__ == "__main__":

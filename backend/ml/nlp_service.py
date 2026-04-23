@@ -1,6 +1,8 @@
 import logging
 import json
 import re
+import os
+import threading
 from typing import Dict, List, Any, Tuple, Optional
 
 logger = logging.getLogger(__name__)
@@ -17,13 +19,23 @@ class NLPService:
         self.is_loaded = False
         self.load_error = None
         self.initialization_attempted = False
+        self.initialization_in_progress = False
+        self._init_lock = threading.Lock()
+        self.enable_heavy_nlp = os.getenv("ENABLE_HEAVY_NLP", "false").lower() == "true"
     
     def initialize(self) -> bool:
         """Initialize BERT models with comprehensive error handling"""
-        if self.initialization_attempted:
-            return self.is_loaded
-        
-        self.initialization_attempted = True
+        if not self.enable_heavy_nlp:
+            self.load_error = "Heavy NLP disabled (ENABLE_HEAVY_NLP=false)"
+            return False
+
+        with self._init_lock:
+            if self.is_loaded:
+                return True
+            if self.initialization_in_progress:
+                return False
+            self.initialization_in_progress = True
+            self.initialization_attempted = True
         
         try:
             logger.info("🔄 Initializing NLP parser (BERT models)...")
@@ -47,6 +59,19 @@ class NLPService:
             self.load_error = f"Unexpected error: {str(e)}"
             self.is_loaded = False
             return False
+        finally:
+            with self._init_lock:
+                self.initialization_in_progress = False
+
+    def initialize_in_background(self) -> None:
+        """Start heavy NLP initialization in background without blocking requests."""
+        if not self.enable_heavy_nlp:
+            return
+        if self.is_loaded or self.initialization_in_progress:
+            return
+
+        thread = threading.Thread(target=self.initialize, daemon=True)
+        thread.start()
     
     def parse_query(self, query: str, use_fallback: bool = True) -> Dict[str, Any]:
         """
@@ -54,14 +79,13 @@ class NLPService:
         Tries BERT first, falls back to keyword matching if needed
         """
         try:
-            # Try BERT parsing
+            # Try BERT parsing when available; never block user request on model load.
             if not self.parser:
                 if not self.is_loaded:
-                    logger.warning("⚠️  Parser not loaded, attempting initialization...")
-                    self.initialize()
+                    self.initialize_in_background()
+                    logger.warning("⚠️  Parser not loaded yet, using fallback parsing")
                 
                 if not self.parser:
-                    logger.warning("⚠️  Parser still not available, using fallback parsing")
                     return self._fallback_parse(query)
             
             logger.debug(f"📝 Parsing query with BERT: '{query}'")
